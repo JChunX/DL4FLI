@@ -15,7 +15,7 @@ full_data0 = zeros(M,N,nTG);
 % Pre-allocate memory for each IRF voxel
 irf_full = zeros(M,N,nTG);
 % Loop over all pixels spatially
-for i=1:M
+parfor i=1:M
     for j=1:N
 %         Only loop at locations from which TPSFs can be created.
         if tau1(i,j)~=0

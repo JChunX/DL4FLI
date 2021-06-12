@@ -9,11 +9,10 @@ load FLIM_IRF;
 load train_binary;
 
 % Number of TPSF voxels to create
-N_total = 100;
+N_total = 20000;
 
-k = 1;
 % nTG = 256;
-while k <= N_total
+for k = 1:N_total
 % Take 28x28 subset of random 32x32 MNIST image
     im_binary = train_images(3:end-2,3:end-2,round(rand()*(size(train_images,3)-1))+1);
 % Make sure it is not too sparse (we want voxels with more TPSFs than
@@ -50,13 +49,12 @@ while k <= N_total
     end
         
 % Assign path along with file name.
-    pathN = '';
+    pathN = 'D:\Projects\Data\DL-FLIM';
     filenm = [pathN '\' 'a_' n '_' num2str(1)];
 
 % Save .mat file. It is important to note the end '-v7.3' - this is one
 % of the more convenient ways to facillitate easy python upload of 
 % matlab-created data.
-    save(filenm, 'sigD', 'I', 't1', 't2', 'rT', '-v7.3');
 
-    k = k+1;
+    save(filenm, 'sigD', 'I', 't1', 't2', 'rT', '-v7.3');
 end
