@@ -12,7 +12,8 @@ load train_binary;
 N_total = 20000;
 
 % nTG = 256;
-for k = 1:N_total
+k = 1;
+while k <= N_total
 % Take 28x28 subset of random 32x32 MNIST image
     im_binary = train_images(3:end-2,3:end-2,round(rand()*(size(train_images,3)-1))+1);
 % Make sure it is not too sparse (we want voxels with more TPSFs than
@@ -57,4 +58,5 @@ for k = 1:N_total
 % matlab-created data.
 
     save(filenm, 'sigD', 'I', 't1', 't2', 'rT', '-v7.3');
+    k = k+1;
 end
