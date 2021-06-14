@@ -4,6 +4,6 @@ function intensity = generate_intensity( image )
     n = size(image, 2);
 %     random matrix of intensity values possessing values within maximum
 %     photon count threshold.
-    int1 = rand(m, n) * 250 + 50; % 50 - 300 p.c.
+    int1 = rand(m, n) * 1500 + 500; % 500 - 2000 p.c.
     intensity = int1.*image;
 end

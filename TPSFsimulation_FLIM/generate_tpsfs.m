@@ -6,14 +6,15 @@ M = size(intensity, 1);
 N = size(intensity, 2);
 % Number of time-points/gates
 nTG = 256;
-
-
 width = 4.89e-2; % Different time-point durations for different apparatus settings
 time = [1:1:nTG]*width;
+
 % Pre-allocate memory for each TPSF voxel
 full_data0 = zeros(M,N,nTG);
+
 % Pre-allocate memory for each IRF voxel
 irf_full = zeros(M,N,nTG);
+
 % Loop over all pixels spatially
 parfor i=1:M
     for j=1:N

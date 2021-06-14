@@ -50,7 +50,7 @@ while k <= N_total
     end
         
 % Assign path along with file name.
-    pathN = 'D:\Projects\Data\DL-FLIM';
+    pathN = 'D:\Projects\Data\DL-FLIM\train';
     filenm = [pathN '\' 'a_' n '_' num2str(1)];
 
 % Save .mat file. It is important to note the end '-v7.3' - this is one
