@@ -5,13 +5,26 @@
 % Jason T. Smith, Rensselaer Polytechnic Institute, August 23, 2019
 % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %
 
+% Workflow:
+% 1. Generate FLIM voxels for train & test
+% 2. upload train & test zips to drive
+% 3. Run notebook
+
 load FLIM_IRF;
 load train_binary;
 
 % Number of TPSF voxels to create
-N_total = 20000;
+N_total = 10000;
+nTG = 256;
+photon_count = [500 2000];
+tau1_range = [0.2,0.6];
+tau2_range = [0.8,1.2];
+pathN = 'D:\Projects\Data\DL-FLIM\train';
 
-% nTG = 256;
+if ~exist(pathN, 'dir')
+   mkdir(pathN)
+end
+
 k = 1;
 while k <= N_total
 % Take 28x28 subset of random 32x32 MNIST image
@@ -22,10 +35,10 @@ while k <= N_total
         continue
     end
 % Generate intensity image map
-    inten = generate_intensity(im_binary);
+    inten = generate_intensity(im_binary, photon_count);
 % Generate t1, t2 and AR image maps
-    [tau1, tau2, ratio] = generate_lifetime(im_binary);
-    data = generate_tpsfs(inten, tau1, tau2, ratio, irf_whole);
+    [tau1, tau2, ratio] = generate_lifetime(im_binary, tau1_range, tau2_range);
+    data = generate_tpsfs(nTG, inten, tau1, tau2, ratio, irf_whole);
     m = size(im_binary,1);
     n = size(im_binary,2);
     
@@ -50,7 +63,6 @@ while k <= N_total
     end
         
 % Assign path along with file name.
-    pathN = 'D:\Projects\Data\DL-FLIM\train';
     filenm = [pathN '\' 'a_' n '_' num2str(1)];
 
 % Save .mat file. It is important to note the end '-v7.3' - this is one

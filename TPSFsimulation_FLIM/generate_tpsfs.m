@@ -1,11 +1,10 @@
-function [full_data0] = generate_tpsfs(intensity, tau1, tau2, ratio, irf_whole)
+function [full_data0] = generate_tpsfs(intensity, nTG, tau1, tau2, ratio, irf_whole)
 % dimension: image * time gate (28x28xnTG)
 % irf: unit Instrumental Response Function (sum=1)
 
 M = size(intensity, 1);
 N = size(intensity, 2);
 % Number of time-points/gates
-nTG = 256;
 width = 4.89e-2; % Different time-point durations for different apparatus settings
 time = [1:1:nTG]*width;
 
