@@ -14,12 +14,12 @@ load FLIM_IRF;
 load train_binary;
 
 % Number of TPSF voxels to create
-N_total = 10000;
+N_total = 2000;
 nTG = 256;
-photon_count = [500 2000];
-tau1_range = [0.2,0.6];
-tau2_range = [0.8,1.2];
-pathN = 'D:\Projects\Data\DL-FLIM\train';
+photon_count = [250 1500];
+tau1_range = [0.4,0.7];
+tau2_range = [2.0,3.0];
+pathN = 'D:\Data\DL-FLIM\test';
 
 if ~exist(pathN, 'dir')
    mkdir(pathN)
@@ -38,7 +38,7 @@ while k <= N_total
     inten = generate_intensity(im_binary, photon_count);
 % Generate t1, t2 and AR image maps
     [tau1, tau2, ratio] = generate_lifetime(im_binary, tau1_range, tau2_range);
-    data = generate_tpsfs(nTG, inten, tau1, tau2, ratio, irf_whole);
+    [data, irf] = generate_tpsfs(inten, nTG, tau1, tau2, ratio, irf_whole);
     m = size(im_binary,1);
     n = size(im_binary,2);
     
@@ -69,6 +69,6 @@ while k <= N_total
 % of the more convenient ways to facillitate easy python upload of 
 % matlab-created data.
 
-    save(filenm, 'sigD', 'I', 't1', 't2', 'rT', '-v7.3');
+    save(filenm, 'sigD', 'I', 't1', 't2', 'rT', 'irf', '-v7.3');
     k = k+1;
 end
