@@ -14,12 +14,12 @@ load FLIM_IRF;
 load train_binary;
 
 % Number of TPSF voxels to create
-N_total = 1000;
+N_total = 500;
 nTG = 256;
-photon_count = [250 1500];
-tau1_range = [0.4,0.7];
+photon_count = [1000 2500];
+tau1_range = [0.2,0.9];
 tau2_range = [2.0,3.0];
-pathN = 'D:\Data\DL-FLIM\test_global';
+pathN = 'C:\Users\xieji\Dropbox\Documents\Data\DL-FLIM\test_global';
 
 if ~exist(pathN, 'dir')
    mkdir(pathN)
