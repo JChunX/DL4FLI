@@ -27,7 +27,7 @@ class TcspcDataGenerator():
         self.test_ds = tf.data.Dataset.list_files(self.test_dir + '/*')
 
     def configure_for_performance(self,ds):
-        ds = ds.cache()
+        #ds = ds.cache()
         ds = ds.batch(self.batch_size)
         ds = ds.prefetch(buffer_size=1)
         return ds

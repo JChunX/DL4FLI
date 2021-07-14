@@ -85,6 +85,7 @@ def train(ds_gan, hparams):
         name='status_message')
     if epochs == 0:
         return
+
     tfgan.gan_train(
         train_ops,
         hooks=[

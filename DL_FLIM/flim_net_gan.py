@@ -3,11 +3,7 @@ tf.compat.v1.disable_eager_execution()
 import tensorflow_gan as tfgan
 
 def _dense(inputs, units, l2_weight):
-    return tf.layers.dense(
-        inputs, units, None,
-        kernel_initializer=tf.keras.initializers.glorot_uniform,
-        kernel_regularizer=tf.keras.regularizers.l2(l=l2_weight),
-        bias_regularizer=tf.keras.regularizers.l2(l=l2_weight))
+    return tf.layers.Dense(units)(inputs)
 
 def _batch_norm(inputs, is_training):
     return tf.layers.batch_normalization(
@@ -148,18 +144,17 @@ def conditional_generator(inputs, weight_decay=2.5e-5, is_training=True):
 _leaky_relu = lambda net: tf.nn.leaky_relu(net, alpha=0.01)
 
 def unconditional_critic(inputs, unused_conditioning, weight_decay=2.5e-5, is_training=True):
-    print(inputs)
-    print(weight_decay)
     net = _conv1d(inputs,64,15,7,weight_decay)
     net = _leaky_relu(net)
     net = _conv1d(net,128,4,2,weight_decay)
     net = _leaky_relu(net)
     net = _conv1d(net,128,4,2,weight_decay)
     net = _leaky_relu(net)
-    net = tf.layers.flatten(net)
 
-    net = _dense(net,1024,weight_decay)
-    net = _batch_norm(net,is_training)
+    net = tf.layers.flatten(net)
+    print("-------------------------")
+    print(net)
+    net = _dense(net,128,weight_decay)
     net = _leaky_relu(net)
 
     net = _dense(net,1,weight_decay)
