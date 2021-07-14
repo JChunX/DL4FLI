@@ -25,7 +25,8 @@ import zipfile
 import tensorflow as tf
 
 from pathlib import Path
-from flim_net import VoxelGenerator, IRFDeconv3D, resblock_2D_BN, resblock_3D_BN
+from flim_datagen import VoxelGenerator
+from flim_net import IRFDeconv3D, resblock_2D_BN, resblock_3D_BN
 from data_extraction import extract_link 
 
 from tensorflow.keras.models import Model

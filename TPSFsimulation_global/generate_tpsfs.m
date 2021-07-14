@@ -12,10 +12,7 @@ time = [1:1:nTG]*width;
 full_data0 = zeros(M,N,nTG);
 
 % Grab IRF from library
-%irf = irf_whole(:,round(rand()*(size(irf_whole,2)-1))+1);   
-irf = zeros(256,1);
-irf(15) = 7500;
-irf(16) = 15000;
+irf = irf_whole(:,round(rand()*(size(irf_whole,2)-1))+1);   
 
 % Loop over all pixels spatially
 parfor i=1:M
