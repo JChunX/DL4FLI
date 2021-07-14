@@ -1,5 +1,4 @@
-import tensorflow.compat.v1 as tf
-tf.compat.v1.disable_eager_execution()
+import tensorflow as tf
 import tensorflow_gan as tfgan
 
 def _dense(inputs, units, l2_weight):
