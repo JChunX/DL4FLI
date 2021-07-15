@@ -77,6 +77,7 @@ class FLIMGAN:
             self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic.trainable_variables))
         return crit_loss
 
+    @tf.function
     def train_wasserstein(self, steps):
         checkpoint_prefix = os.path.join(self.checkpt, "ckpt")
         checkpoint = tf.train.Checkpoint(generator_optimizer=self.generator_optimizer,
@@ -113,9 +114,6 @@ class FLIMGAN:
             if (step + 1) % 5000 == 0:
                 checkpoint.save(file_prefix=checkpoint_prefix)
 
-            if (step + 1) % 1000 == 0:
-                self.ds_gan.plot(self.generator)
-
         return
 
 
@@ -125,12 +123,12 @@ def main(args):
            'clipping':0.01,
            'ncritic':5,
            'batch_size':args.batch_size}
-           
-    generator = conditional_generator((tf.keras.Input(shape=(nTG,1)),
-                                    tf.keras.Input(shape=(nTG,1))))
-    critic = conditional_critic((tf.keras.Input(shape=(nTG,1)),
-                            tf.keras.Input(shape=(nTG,1))))
-    gan = FLIMGAN(args.data_dir, args.train_link, args.test_link, nTG, 0.2, generator, critic, hparams)
+    with mirrored_strategy.scope():
+        generator = conditional_generator((tf.keras.Input(shape=(nTG,1)),
+                                        tf.keras.Input(shape=(nTG,1))))
+        critic = conditional_critic((tf.keras.Input(shape=(nTG,1)),
+                                tf.keras.Input(shape=(nTG,1))))
+        gan = FLIMGAN(args.data_dir, args.train_link, args.test_link, nTG, 0.2, generator, critic, hparams)
     steps = args.steps
     gan.ds_gan.plot(gan.generator)
     gan.train_wasserstein(steps)
