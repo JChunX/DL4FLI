@@ -1,6 +1,10 @@
 import tensorflow as tf
 import tensorflow_gan as tfgan
 
+"""
+Components for GAN
+"""
+
 def _dense(inputs, units, l2_weight):
     return tf.keras.layers.Dense(units)(inputs)
 
@@ -27,7 +31,16 @@ def _conv1d(inputs, filters, kernel_size, stride, l2_weight):
 def _maxpool1d(inputs):
     return tf.keras.layers.MaxPooling1D(2,strides=2)(inputs)
 
+"""
 
+1D batchwise reconvolution
+Given input of shape (batch, width, 1) and
+kernal of shape (batch, width, 1)
+Map batchwise s.t. conv1d receives (fakebatch=1,width,1) and (width,1,1)
+Input is expanded to shape of (batch, 1, width, 1)
+Kernal is expanded to shape of (batch, width, 1, 1)
+
+"""
 class IRFReconv1D(tf.keras.layers.Layer):
     def __init__(self,t):
         super().__init__()
@@ -50,7 +63,13 @@ class IRFReconv1D(tf.keras.layers.Layer):
             (tf.expand_dims(dk,1),tf.expand_dims(irf,-1)), 
             dtype=tf.float32),axis=1)
 
+"""
 
+Generator maps low-count decay to high-count decay
+Uses modified U-net architecture
+Input and output length is the same
+
+"""
 def conditional_generator(inputs, weight_decay=2.5e-5):
     dk_lowcount = inputs[0]
     irf = inputs[1]
@@ -146,7 +165,11 @@ def conditional_generator(inputs, weight_decay=2.5e-5):
     generative_model = tf.keras.Model(inputs=(dk_lowcount,irf), outputs=dk_super)
     return generative_model
 
-_leaky_relu = lambda net: tf.nn.leaky_relu(net, alpha=0.01)
+"""
+
+Critic maps high-count input and IRF and produces a score
+
+"""
 
 def conditional_critic(inputs, weight_decay=2.5e-5):
     dk_highcount = inputs[0]
@@ -166,18 +189,3 @@ def conditional_critic(inputs, weight_decay=2.5e-5):
     net = _dense(net,1,weight_decay)
     critic = tf.keras.Model(inputs=(dk_highcount, irf), outputs=net)
     return critic
-
-def get_eval_metric_ops_fn(gan_model):
-    real_data_logits = tf.reduce_mean(gan_model.discriminator_real_outputs)
-    gen_data_logits = tf.reduce_mean(gan_model.discriminator_gen_outputs)
-    real_mnist_score = eval_util.mnist_score(gan_model.real_data)
-    generated_mnist_score = eval_util.mnist_score(gan_model.generated_data)
-    frechet_distance = eval_util.mnist_frechet_distance(
-        gan_model.real_data, gan_model.generated_data)
-    return {
-        'real_data_logits': tf.metrics.mean(real_data_logits),
-        'gen_data_logits': tf.metrics.mean(gen_data_logits),
-        'real_mnist_score': tf.metrics.mean(real_mnist_score),
-        'mnist_score': tf.metrics.mean(generated_mnist_score),
-        'frechet_distance': tf.metrics.mean(frechet_distance),
-    }

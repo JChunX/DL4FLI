@@ -2,6 +2,9 @@ from pathlib import Path
 import os
 import zipfile
 
+"""
+Utilities for extracting data from storage provider
+"""
 
 def extract_link(data_dir, link):
     """

@@ -14,6 +14,8 @@ from flim_net_gan import conditional_generator, conditional_critic
 
 mirrored_strategy = tf.distribute.MirroredStrategy()
 
+#python train_flim_gan.py --steps 30000 --batch_size 2 D:\Data\DL-FLIM https://www.dropbox.com/s/0lpsp1r9ma3nvmr/train_gan.zip https://www.dropbox.com/s/hb9xhjl2flt5hrw/test_gan.zip?dl=0
+
 class FLIMGAN:
 
     def __init__(self, data_dir,
@@ -21,6 +23,8 @@ class FLIMGAN:
                     test_link,
                     nTG,
                     val_split,
+                    generator,
+                    critic,
                     hparams):
         self.data_dir = data_dir
         self.train_link = train_link
@@ -42,16 +46,14 @@ class FLIMGAN:
         if not os.path.exists(self.checkpt):
             os.makedirs(self.checkpt)
 
-        train_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_gan'#extract_link(data_dir, train_link)
-        test_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_gan'#extract_link(data_dir, test_link)
+        train_dir = extract_link(data_dir, train_link)#'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_gan'
+        test_dir = extract_link(data_dir, test_link)#'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_gan'
 
         self.ds_gan = DecayGenerator(train_dir,test_dir,nTG,self.batch_size,self.val_split,'gan')
         # generator: (dk_lowcount, irf) -> dk_high
-        self.generator = conditional_generator((tf.keras.Input(shape=(nTG,1)),
-                                    tf.keras.Input(shape=(nTG,1))))
+        self.generator = generator 
         # critic: (dk_high, irf) -> score
-        self.critic = conditional_critic((tf.keras.Input(shape=(nTG,1)),
-                                    tf.keras.Input(shape=(nTG,1))))
+        self.critic = critic
         self.generator_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha)
         self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha, clipvalue=self.clipping)
 
@@ -105,11 +107,15 @@ class FLIMGAN:
 
             # Training step
             if (step+1) % 10 == 0:
-              print('.', end='', flush=True)
+                print('.', end='', flush=True)
 
             # Save (checkpoint) the model every 5k steps
             if (step + 1) % 5000 == 0:
-              checkpoint.save(file_prefix=checkpoint_prefix)
+                checkpoint.save(file_prefix=checkpoint_prefix)
+
+            if (step + 1) % 1000 == 0:
+                self.ds_gan.plot(self.generator)
+
         return
 
 
@@ -119,8 +125,14 @@ def main(args):
            'clipping':0.01,
            'ncritic':5,
            'batch_size':args.batch_size}
-    gan = FLIMGAN(args.data_dir, args.train_link, args.test_link, nTG, 0.2, hparams)
+           
+    generator = conditional_generator((tf.keras.Input(shape=(nTG,1)),
+                                    tf.keras.Input(shape=(nTG,1))))
+    critic = conditional_critic((tf.keras.Input(shape=(nTG,1)),
+                            tf.keras.Input(shape=(nTG,1))))
+    gan = FLIMGAN(args.data_dir, args.train_link, args.test_link, nTG, 0.2, generator, critic, hparams)
     steps = args.steps
+    gan.ds_gan.plot(gan.generator)
     gan.train_wasserstein(steps)
 
 

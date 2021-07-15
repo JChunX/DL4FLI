@@ -112,20 +112,21 @@ class DecayGenerator(TcspcDataGenerator):
         else:
             return (decay_highcount), (t1,t2,rT)
 
-    def plot(self, model=None, max_subplots=5):
+    def plot(self, model=None, max_subplots=1):
         dk, labels = self.example
         for i in range(min(max_subplots,self.batch_size)):
 
             if self.type == 'gan':
-                plt.figure(figsize=(10,10))
+                plt.figure(figsize=(30,10))
+                plt.subplot(1,3,1)
                 plt.title('Low count decay example')
                 plt.plot(dk[0][i])
-                plt.figure(figsize=(10,10))
+                plt.subplot(1,3,2)
                 plt.title('IRF')
                 plt.plot(dk[1][i])
                 if model is not None:
                     dk_highcount = model(dk)
-                    plt.figure(figsize=(10,10))
+                    plt.subplot(1,3,3)
                     plt.title('Upscaled decay')
                     plt.plot(dk_highcount[i])
 
@@ -140,6 +141,7 @@ class DecayGenerator(TcspcDataGenerator):
                     print('tau2_pred: {}'.format(predictions[1][i,0,0].numpy())) #TODO
                     print('alpha%_pred: {}'.format(predictions[2][i,0,0].numpy())) #TODO
             plt.show()
+            plt.pause(0.001)
 
 
 class VoxelGenerator(TcspcDataGenerator):
