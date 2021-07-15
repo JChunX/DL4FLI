@@ -23,7 +23,7 @@ class FLIMGAN:
                     nTG,
                     val_split,
                     hparams):
-        self.strategy = tf.distribute.MirroredStrategy()
+        self.strategy = tf.distribute.get_strategy()
 
         self.data_dir = data_dir
         self.train_link = train_link
@@ -66,9 +66,9 @@ class FLIMGAN:
 
             checkpoint_prefix = os.path.join(self.checkpt, "ckpt")
             self.checkpoint = tf.train.Checkpoint(generator_optimizer=self.generator_optimizer,
-                                         critriminator_optimizer=self.critic_optimizer,
+                                         critic_optimizer=self.critic_optimizer,
                                          generator=self.generator,
-                                         critriminator=self.critic)
+                                         critic=self.critic)
 
     @tf.function
     def generator_loss(self, crit_generated_output):
@@ -77,6 +77,7 @@ class FLIMGAN:
 
     @tf.function
     def critic_loss(self, crit_generated_output, crit_real_output):
+        return crit_generated_output - crit_real_output + 
         return -tf.reduce_mean(tf.abs(crit_real_output)) + tf.reduce_mean(tf.abs(crit_generated_output))
 
     def train_critic_step(self, critic_inputs):
