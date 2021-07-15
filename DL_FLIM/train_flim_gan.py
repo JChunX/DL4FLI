@@ -77,7 +77,6 @@ class FLIMGAN:
 
     @tf.function
     def critic_loss(self, crit_generated_output, crit_real_output):
-        return crit_generated_output - crit_real_output + 
         return -tf.reduce_mean(tf.abs(crit_real_output)) + tf.reduce_mean(tf.abs(crit_generated_output))
 
     def train_critic_step(self, critic_inputs):
