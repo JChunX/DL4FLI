@@ -2,23 +2,22 @@ import tensorflow as tf
 import tensorflow_gan as tfgan
 
 def _dense(inputs, units, l2_weight):
-    return tf.layers.Dense(units)(inputs)
+    return tf.keras.layers.Dense(units)(inputs)
 
-def _batch_norm(inputs, is_training):
-    return tf.layers.batch_normalization(
-        inputs, momentum=0.999, epsilon=0.001, training=is_training)
+def _batch_norm(inputs):
+    return tf.keras.layers.BatchNormalization(
+        momentum=0.999, epsilon=0.001)(inputs)
 
 def _deconv1d(inputs, filters, kernel_size, stride, l2_weight):
-    temp = tf.layers.Conv2DTranspose(
-        filters, [kernel_size,1], strides=[stride,1], 
+    return tf.keras.layers.Conv1DTranspose(
+        filters, kernel_size, strides=stride, 
         activation=tf.nn.relu, padding='valid',
         kernel_initializer=tf.keras.initializers.glorot_uniform,
         kernel_regularizer=tf.keras.regularizers.l2(l=l2_weight),
-        bias_regularizer=tf.keras.regularizers.l2(l=l2_weight))(tf.expand_dims(inputs,axis=-2))
-    return tf.squeeze(temp,axis=2)
+        bias_regularizer=tf.keras.regularizers.l2(l=l2_weight))(inputs)
 
 def _conv1d(inputs, filters, kernel_size, stride, l2_weight):
-    return tf.layers.Conv1D(
+    return tf.keras.layers.Conv1D(
         filters, kernel_size, strides=stride, 
         activation=None, padding='valid',
         kernel_initializer=tf.keras.initializers.glorot_uniform,
@@ -26,67 +25,72 @@ def _conv1d(inputs, filters, kernel_size, stride, l2_weight):
         bias_regularizer=tf.keras.regularizers.l2(l=l2_weight))(inputs)
 
 def _maxpool1d(inputs):
-    return tf.layers.MaxPooling1D(2,strides=2)(inputs)
+    return tf.keras.layers.MaxPooling1D(2,strides=2)(inputs)
 
-def _deconv2d(inputs, filters, kernel_size, stride, l2_weight):
-    return tf.layers.conv2d_transpose(
-        inputs, filters, kernel_size, strides=stride, 
-        activation=tf.nn.relu, padding='valid',
-        kernel_initializer=tf.keras.initializers.glorot_uniform,
-        kernel_regularizer=tf.keras.regularizers.l2(l=l2_weight),
-        bias_regularizer=tf.keras.regularizers.l2(l=l2_weight))
 
-def reconvolution1d(input, kernel):
+class IRFReconv1D(tf.keras.layers.Layer):
+    def __init__(self,t):
+        super().__init__()
+        self.t = t
 
-    def single_batch_reconv(tup):
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'time_bins': self.t
+        })
+        return config
+
+    def single_batch_reconv(self, tup):
         d, k = tup
         return tf.nn.conv1d(d,k/tf.reduce_max(k),stride=1,padding='SAME')
 
-    def call(input, *args, **kwargs):
+    def call(self, dk, irf, *args, **kwargs):
         return tf.squeeze(tf.map_fn(
-            single_batch_reconv, (tf.expand_dims(input[0],1),tf.expand_dims(input[1],-1)), dtype=tf.float32),axis=1)
+            self.single_batch_reconv, 
+            (tf.expand_dims(dk,1),tf.expand_dims(irf,-1)), 
+            dtype=tf.float32),axis=1)
 
-    return call((input,kernel))
 
-def conditional_generator(inputs, weight_decay=2.5e-5, is_training=True):
-    dk_lowcount, irf = inputs
+def conditional_generator(inputs, weight_decay=2.5e-5):
+    dk_lowcount = inputs[0]
+    irf = inputs[1]
     u_stage1 = _conv1d(dk_lowcount,64,3,1,weight_decay)
-    u_stage1 = _batch_norm(u_stage1, is_training)
+    u_stage1 = _batch_norm(u_stage1)
     u_stage1 = tf.nn.relu(u_stage1)
     u_stage1 = _conv1d(u_stage1,64,3,1,weight_decay)
-    u_stage1 = _batch_norm(u_stage1, is_training)
+    u_stage1 = _batch_norm(u_stage1)
     u_stage1 = tf.nn.relu(u_stage1)
 
     u_stage2 = _maxpool1d(u_stage1)
     u_stage2 = _conv1d(u_stage2,128,3,1,weight_decay)
-    u_stage2 = _batch_norm(u_stage2, is_training)
+    u_stage2 = _batch_norm(u_stage2)
     u_stage2 = tf.nn.relu(u_stage2)
     u_stage2 = _conv1d(u_stage2,128,3,1,weight_decay)
-    u_stage2 = _batch_norm(u_stage2, is_training)
+    u_stage2 = _batch_norm(u_stage2)
     u_stage2 = tf.nn.relu(u_stage2)
 
     u_stage3 = _maxpool1d(u_stage2)
     u_stage3 = _conv1d(u_stage3,256,3,1,weight_decay)
-    u_stage3 = _batch_norm(u_stage3, is_training)
+    u_stage3 = _batch_norm(u_stage3)
     u_stage3 = tf.nn.relu(u_stage3)
     u_stage3 = _conv1d(u_stage3,256,3,1,weight_decay)
-    u_stage3 = _batch_norm(u_stage3, is_training)
+    u_stage3 = _batch_norm(u_stage3)
     u_stage3 = tf.nn.relu(u_stage3)
 
     u_stage4 = _maxpool1d(u_stage3)
     u_stage4 = _conv1d(u_stage4,512,3,1,weight_decay)
-    u_stage4 = _batch_norm(u_stage4, is_training)
+    u_stage4 = _batch_norm(u_stage4)
     u_stage4 = tf.nn.relu(u_stage4)
     u_stage4 = _conv1d(u_stage4,512,3,1,weight_decay)
-    u_stage4 = _batch_norm(u_stage4, is_training)
+    u_stage4 = _batch_norm(u_stage4)
     u_stage4 = tf.nn.relu(u_stage4)
 
     u_stage5 = _maxpool1d(u_stage4)
     u_stage5 = _conv1d(u_stage5,1024,3,1,weight_decay)
-    u_stage5 = _batch_norm(u_stage5, is_training)
+    u_stage5 = _batch_norm(u_stage5)
     u_stage5 = tf.nn.relu(u_stage5)
     u_stage5 = _conv1d(u_stage5,1024,3,1,weight_decay)
-    u_stage5 = _batch_norm(u_stage5, is_training)
+    u_stage5 = _batch_norm(u_stage5)
     u_stage5 = tf.nn.relu(u_stage5)
     """
     Save for estimator training (lock other layers)
@@ -105,44 +109,49 @@ def conditional_generator(inputs, weight_decay=2.5e-5, is_training=True):
 
     u_stage6 = tf.concat([_deconv1d(u_stage5,512,3,3,weight_decay), u_stage4],-1)
     u_stage6 = _conv1d(u_stage6,512,3,1,weight_decay)
-    u_stage6 = _batch_norm(u_stage6, is_training)
+    u_stage6 = _batch_norm(u_stage6)
     u_stage6 = tf.nn.relu(u_stage6)
     u_stage6 = _conv1d(u_stage6,512,3,1,weight_decay)
-    u_stage6 = _batch_norm(u_stage6, is_training)
+    u_stage6 = _batch_norm(u_stage6)
     u_stage6 = tf.nn.relu(u_stage6)
 
     u_stage7 = tf.concat([tf.keras.layers.Cropping1D((1,2))(_deconv1d(u_stage6,128,2,3,weight_decay)), u_stage3],-1)
     u_stage7 = _conv1d(u_stage7,256,3,1,weight_decay)
-    u_stage7 = _batch_norm(u_stage7, is_training)
+    u_stage7 = _batch_norm(u_stage7)
     u_stage7 = tf.nn.relu(u_stage7)
     u_stage7 = _conv1d(u_stage7,256,3,1,weight_decay)
-    u_stage7 = _batch_norm(u_stage7, is_training)
+    u_stage7 = _batch_norm(u_stage7)
     u_stage7 = tf.nn.relu(u_stage7)
 
     u_stage8 = tf.concat([tf.keras.layers.Cropping1D((19,18))(_deconv1d(u_stage7,128,2,3,weight_decay)),u_stage2],-1)
     u_stage8 = _conv1d(u_stage8,128,3,1,weight_decay)
-    u_stage8 = _batch_norm(u_stage8, is_training)
+    u_stage8 = _batch_norm(u_stage8)
     u_stage8 = tf.nn.relu(u_stage8)
     u_stage8 = _conv1d(u_stage8,128,3,1,weight_decay)
-    u_stage8 = _batch_norm(u_stage8, is_training)
+    u_stage8 = _batch_norm(u_stage8)
     u_stage8 = tf.nn.relu(u_stage8)
 
     u_stage9 = tf.concat([tf.keras.layers.Cropping1D(51)(_deconv1d(u_stage8,64,3,3,weight_decay)), u_stage1],-1)
     u_stage9 = _conv1d(u_stage9,64,3,1,weight_decay)
-    u_stage9 = _batch_norm(u_stage9, is_training)
+    u_stage9 = _batch_norm(u_stage9)
     u_stage9 = tf.nn.relu(u_stage9)
     u_stage9 = _conv1d(u_stage9,64,3,1,weight_decay)
-    u_stage9 = _batch_norm(u_stage9, is_training)
+    u_stage9 = _batch_norm(u_stage9)
     u_stage9 = tf.nn.relu(u_stage9)
     u_stage9 = _deconv1d(u_stage9,1,9,1,weight_decay)
 
-    dk_super = reconvolution1d(u_stage9,irf)
+    dk_super = IRFReconv1D(256)(u_stage9,irf)
     dk_super = _conv1d(dk_super,1,1,1,weight_decay)
-    return dk_super
+
+    generative_model = tf.keras.Model(inputs=(dk_lowcount,irf), outputs=dk_super)
+    return generative_model
 
 _leaky_relu = lambda net: tf.nn.leaky_relu(net, alpha=0.01)
 
-def unconditional_critic(inputs, unused_conditioning, weight_decay=2.5e-5, is_training=True):
+def conditional_critic(inputs, weight_decay=2.5e-5):
+    dk_highcount = inputs[0]
+    irf = inputs[1]
+    inputs = tf.concat([dk_highcount,irf/tf.reduce_max(irf)],0)
     net = _conv1d(inputs,64,15,7,weight_decay)
     net = _leaky_relu(net)
     net = _conv1d(net,128,4,2,weight_decay)
@@ -150,14 +159,13 @@ def unconditional_critic(inputs, unused_conditioning, weight_decay=2.5e-5, is_tr
     net = _conv1d(net,128,4,2,weight_decay)
     net = _leaky_relu(net)
 
-    net = tf.layers.flatten(net)
-    print("-------------------------")
-    print(net)
+    net = tf.keras.layers.Flatten()(net)
     net = _dense(net,128,weight_decay)
     net = _leaky_relu(net)
 
     net = _dense(net,1,weight_decay)
-    return net
+    critic = tf.keras.Model(inputs=(dk_highcount, irf), outputs=net)
+    return critic
 
 def get_eval_metric_ops_fn(gan_model):
     real_data_logits = tf.reduce_mean(gan_model.discriminator_real_outputs)

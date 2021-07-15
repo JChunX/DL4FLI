@@ -1,104 +1,147 @@
 # -*- coding: utf-8 -*-
 
-# Relevant libraries and functions
 import argparse
-
-parser = argparse.ArgumentParser(description='Training pipeline for DL_FLIM')
-
-parser.add_argument('data_dir', type=str,
-    help='Data directory')
-parser.add_argument('train_link', type=str,
-    help='Link to training data')
-parser.add_argument('test_link', type=str,
-    help='Link to testing data')
-
-parser.add_argument('--epochs', default=250, type=int, 
-    help='Number of epochs to train for')
-parser.add_argument('--batch_size', default=64, type=int, 
-    help='Batch size')
-
 import numpy as np 
 import os
 import zipfile
 import tensorflow as tf
-import tensorflow_gan as tfgan
+import datetime
 
 from pathlib import Path
 from flim_datagen import DecayGenerator
 from data_extraction import extract_link
-from flim_net_gan import conditional_generator, unconditional_critic
+from flim_net_gan import conditional_generator, conditional_critic
 
 mirrored_strategy = tf.distribute.MirroredStrategy()
 
-def main(args):
-    data_dir = args.data_dir
+class FLIMGAN:
 
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-    if not os.path.exists(os.path.join(data_dir,'logs')):
-        os.makedirs(os.path.join(data_dir,'logs'))
-    train_link = args.train_link
-    test_link = args.test_link
+    def __init__(self, data_dir,
+                    train_link,
+                    test_link,
+                    nTG,
+                    val_split,
+                    hparams):
+        self.data_dir = data_dir
+        self.train_link = train_link
+        self.test_link = test_link
+        self.nTG = nTG
+        self.batch_size = hparams['batch_size'] * mirrored_strategy.num_replicas_in_sync
+        self.alpha = hparams['alpha']
+        self.clipping = hparams['clipping']
+        self.ncritic = hparams['ncritic']
+        self.batch_size = hparams['batch_size']
+        self.val_split = val_split
+        self.logdir = os.path.join(data_dir,'logs')
+        self.checkpt = os.path.join(data_dir,'checkpt')
 
-    train_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_global_gan'#extract_link(data_dir, train_link)
-    test_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_global_gan'#extract_link(data_dir, test_link)
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir)
+        if not os.path.exists(self.logdir):
+            os.makedirs(self.logdir)
+        if not os.path.exists(self.checkpt):
+            os.makedirs(self.checkpt)
 
-    nTG = 256
+        train_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_gan'#extract_link(data_dir, train_link)
+        test_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_gan'#extract_link(data_dir, test_link)
 
-    batch_size = args.batch_size * mirrored_strategy.num_replicas_in_sync
-    val_split = 0.2
-    ds_gan = DecayGenerator(train_dir,test_dir,nTG,batch_size,val_split,'gan')
-    train(ds_gan,(batch_size, os.path.join(data_dir,'logs'), args.epochs))
+        self.ds_gan = DecayGenerator(train_dir,test_dir,nTG,self.batch_size,self.val_split,'gan')
+        # generator: (dk_lowcount, irf) -> dk_high
+        self.generator = conditional_generator((tf.keras.Input(shape=(nTG,1)),
+                                    tf.keras.Input(shape=(nTG,1))))
+        # critic: (dk_high, irf) -> score
+        self.critic = conditional_critic((tf.keras.Input(shape=(nTG,1)),
+                                    tf.keras.Input(shape=(nTG,1))))
+        self.generator_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha)
+        self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha, clipvalue=self.clipping)
 
-def train(ds_gan, hparams):
+    def generator_loss(self, crit_generated_output):
+        # Mean absolute error (sum) from critic output
+        return -tf.reduce_mean(tf.abs(crit_generated_output))
 
-    batch_size, train_log_dir, epochs = hparams
+    def critic_loss(self, crit_generated_output, crit_real_output):
+        return -tf.reduce_mean(tf.abs(crit_real_output)) + tf.reduce_mean(tf.abs(crit_generated_output))
 
-    dk_low, irf, dk_high = tf.data.make_one_shot_iterator(ds_gan.train).get_next()
-    gan_model = tfgan.gan_model(
-        generator_fn = conditional_generator,
-        discriminator_fn = unconditional_critic,
-        real_data = tf.concat([dk_high, irf],0),
-        generator_inputs = (dk_low, irf)
-        )
+    @tf.function
+    def train_inner_step(self,dk_low, dk_high):
+        for _ in range(self.ncritic):
+            # Sample prior, real data, compute loss on critic
+            with tf.GradientTape() as crit_tape:
+                gen_output = self.generator(dk_low, training=True)
+                crit_real_output = self.critic([dk_high, dk_low[1]], training=True)
+                crit_generated_output = self.critic([gen_output, dk_low[1]], training=True)
+                crit_loss = self.critic_loss(crit_generated_output, crit_real_output)
+            critic_gradients = crit_tape.gradient(crit_loss, self.critic.trainable_variables)
+            self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic.trainable_variables))
+        return crit_loss
 
-    with tf.name_scope('loss'):
-        gan_loss = tfgan.gan_loss(gan_model, add_summaries=True)
-        tfgan.eval.add_regularization_loss_summaries(gan_model)
+    def train_wasserstein(self, steps):
+        checkpoint_prefix = os.path.join(self.checkpt, "ckpt")
+        checkpoint = tf.train.Checkpoint(generator_optimizer=self.generator_optimizer,
+                                     critriminator_optimizer=self.critic_optimizer,
+                                     generator=self.generator,
+                                     critriminator=self.critic)
+        summary_writer = tf.summary.create_file_writer(
+            os.path.join(self.checkpt, "fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")))
 
-    with tf.name_scope('train'):
-        gen_lr, dis_lr = (1e-5, 1e-4)
-        train_ops = tfgan.gan_train_ops(
-            gan_model,
-            gan_loss,
-            generator_optimizer=tf.train.AdamOptimizer(gen_lr, 0.01),
-            discriminator_optimizer=tf.train.AdamOptimizer(dis_lr, 0.01),
-            summarize_gradients=True,
-            aggregation_method=tf.AggregationMethod.EXPERIMENTAL_ACCUMULATE_N)
+        train_ds = self.ds_gan.train
+        test_ds = self.ds_gan.test
 
-    # Run the alternating training loop. Skip it if no steps should be taken
-    # (used for graph construction tests).
-    status_message = tf.strings.join([
-        'Starting train step: ',
-        tf.as_string(tf.train.get_or_create_global_step())], 
-        name='status_message')
-    if epochs == 0:
+        for step in range(steps):
+            for _ in range(self.ncritic):
+                (dk_low, dk_high) = next(iter(train_ds))
+                crit_loss = self.train_inner_step(dk_low, dk_high)
+            (dk_low, dk_high) = next(iter(train_ds))
+            with tf.GradientTape() as gen_tape:
+                gen_output = self.generator(dk_low, training=True)
+                crit_generated_output = self.critic([gen_output, dk_low[1]],training=True)
+                gen_loss = self.generator_loss(crit_generated_output)
+            generator_gradients = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
+            self.generator_optimizer.apply_gradients(zip(generator_gradients, self.generator.trainable_variables))
+
+            with summary_writer.as_default():
+                tf.summary.scalar('gen_loss', gen_loss, step=step//1000)
+                tf.summary.scalar('crit_loss', crit_loss, step=step//1000)
+
+            # Training step
+            if (step+1) % 10 == 0:
+              print('.', end='', flush=True)
+
+            # Save (checkpoint) the model every 5k steps
+            if (step + 1) % 5000 == 0:
+              checkpoint.save(file_prefix=checkpoint_prefix)
         return
 
-    tfgan.gan_train(
-        train_ops,
-        hooks=[
-            tf.estimator.StopAtStepHook(num_steps=epochs),
-            tf.estimator.LoggingTensorHook([status_message], every_n_iter=10)
-            ],
-        logdir=train_log_dir,
-        get_hooks_fn=tfgan.get_joint_train_hooks(),
-        save_checkpoint_secs=60)
+
+def main(args):
+    nTG = 256
+    hparams = {'alpha':5e-5,
+           'clipping':0.01,
+           'ncritic':5,
+           'batch_size':args.batch_size}
+    gan = FLIMGAN(args.data_dir, args.train_link, args.test_link, nTG, 0.2, hparams)
+    steps = args.steps
+    gan.train_wasserstein(steps)
+
+
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Training pipeline for DL_FLIM')
+    parser.add_argument('data_dir', type=str,
+        help='Data directory')
+    parser.add_argument('train_link', type=str,
+        help='Link to training data')
+    parser.add_argument('test_link', type=str,
+        help='Link to testing data')
+
+    parser.add_argument('--steps', default=250, type=int, 
+        help='Number of steps to train for')
+    parser.add_argument('--batch_size', default=64, type=int, 
+        help='Batch size')
     args = parser.parse_args()
+
     print('GAN Training args:')
-    print('    Number of epochs: {}'.format(args.epochs))
+    print('    Number of steps: {}'.format(args.steps))
     print('    Batch size: {}'.format(args.batch_size))
     print('    Data directory: {}'.format(args.data_dir))
     print('    Training data link: {}'.format(args.train_link))

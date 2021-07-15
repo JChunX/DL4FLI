@@ -1,14 +1,13 @@
 import tensorflow as tf
-tf.compat.v1.disable_eager_execution()
 import numpy as np
 import h5py
 import os
 import matplotlib.pyplot as plt 
 
 from tensorflow.experimental.numpy import moveaxis
+from abc import ABC, abstractmethod
 
-
-class TcspcDataGenerator():
+class TcspcDataGenerator(ABC):
     def __init__(self, train, test,         
                  batch_size, val_split):
         self.train_dir = train
@@ -26,14 +25,21 @@ class TcspcDataGenerator():
         self.val_ds = list_ds.take(val_size)
         self.test_ds = tf.data.Dataset.list_files(self.test_dir + '/*')
 
+    @abstractmethod
+    def wrap_process_path(self):
+        pass
+
     def configure_for_performance(self,ds):
-        #ds = ds.cache()
+        ds = ds.cache()
         ds = ds.batch(self.batch_size)
         ds = ds.prefetch(buffer_size=1)
+        ds = ds.repeat()
         return ds
 
     def get_dataset(self, ds):
-        pass
+        ds = ds.map(self.wrap_process_path, num_parallel_calls=os.cpu_count())
+        ds = self.configure_for_performance(ds)
+        return ds
 
     @property
     def train(self):
@@ -101,30 +107,26 @@ class DecayGenerator(TcspcDataGenerator):
         rT = tensors[4]
         irf = tf.transpose(tensors[5])
 
-        decay_lowcount.set_shape([self.nTG,1])
-        decay_highcount.set_shape([self.nTG,1])
-        irf.set_shape([self.nTG,1])
-
         if self.type == 'gan':
-            return decay_lowcount, irf, decay_highcount
+            return (decay_lowcount, irf), decay_highcount
         else:
             return (decay_highcount), (t1,t2,rT)
-
-    def get_dataset(self, ds):
-        ds = ds.map(self.wrap_process_path, num_parallel_calls=os.cpu_count())
-        ds = self.configure_for_performance(ds)
-        return ds
 
     def plot(self, model=None, max_subplots=5):
         dk, labels = self.example
         for i in range(min(max_subplots,self.batch_size)):
 
             if self.type == 'gan':
-                plt.figure(figsize=(15,15))
+                plt.figure(figsize=(10,10))
+                plt.title('Low count decay example')
                 plt.plot(dk[0][i])
-                
+                plt.figure(figsize=(10,10))
+                plt.title('IRF')
+                plt.plot(dk[1][i])
                 if model is not None:
                     dk_highcount = model(dk)
+                    plt.figure(figsize=(10,10))
+                    plt.title('Upscaled decay')
                     plt.plot(dk_highcount[i])
 
             if self.type == 'est':
@@ -137,6 +139,7 @@ class DecayGenerator(TcspcDataGenerator):
                     print('tau1_pred: {}'.format(predictions[0][i,0,0].numpy())) #TODO
                     print('tau2_pred: {}'.format(predictions[1][i,0,0].numpy())) #TODO
                     print('alpha%_pred: {}'.format(predictions[2][i,0,0].numpy())) #TODO
+            plt.show()
 
 
 class VoxelGenerator(TcspcDataGenerator):
@@ -179,11 +182,6 @@ class VoxelGenerator(TcspcDataGenerator):
         rT = tf.reshape(tf.transpose(tensors[3]), (self.xX, self.yY, 1))
         irf = tf.reshape(tensors[4],(1,1,self.nTG,1,1))
         return (decay, irf), (t1, t2, rT, decay)
-
-    def get_dataset(self, ds):
-        ds = ds.map(self.wrap_process_path, num_parallel_calls=os.cpu_count())
-        ds = self.configure_for_performance(ds)
-        return ds
 
     def plot(self, model=None, max_subplots=5):
         voxels, labels = self.example
