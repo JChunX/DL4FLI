@@ -1,5 +1,4 @@
 import tensorflow as tf
-import tensorflow_gan as tfgan
 
 """
 Components for GAN

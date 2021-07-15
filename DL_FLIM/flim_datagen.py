@@ -4,7 +4,6 @@ import h5py
 import os
 import matplotlib.pyplot as plt 
 
-from tensorflow.experimental.numpy import moveaxis
 from abc import ABC, abstractmethod
 
 class TcspcDataGenerator(ABC):
