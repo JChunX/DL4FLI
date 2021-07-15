@@ -1,5 +1,6 @@
 import tensorflow as tf
-
+import matplotlib.pyplot as plt
+import numpy as np
 """
 Components for GAN
 """
@@ -42,13 +43,17 @@ def _maxpool1d(inputs):
 
 """
 
-1D batchwise reconvolution
-Given input of shape (batch, width, 1) and
+1D batchwise temporal reconvolution
+Given input of shape (batch, width=206, 1) and
 kernal of shape (batch, width, 1)
+produce output of shape (batch, 256, 1)
+
 Map batchwise s.t. conv1d receives (fakebatch=1,width,1) and (width,1,1)
 Input is expanded to shape of (batch, 1, width, 1)
 Kernal is expanded to shape of (batch, width, 1, 1)
-
+Kernal is reversed before conv op
+Padding is applied to Input s.t. output is 256 wide:
+    Lpad=kernal_width-1, Rpad=50
 """
 class IRFReconv1D(tf.keras.layers.Layer):
     def __init__(self,t):
@@ -64,9 +69,12 @@ class IRFReconv1D(tf.keras.layers.Layer):
 
     def single_batch_reconv(self, tup):
         d, k = tup
-        return tf.nn.conv1d(d,k/tf.reduce_max(k),stride=1,padding='SAME')
+        k = tf.reverse(k,axis=[0])
+        temp = tf.nn.conv1d(d,k/tf.reduce_max(k),stride=1,padding='VALID')
+        return temp
 
     def call(self, dk, irf, *args, **kwargs):
+        dk = tf.keras.layers.ZeroPadding1D(padding=(self.t-1,36))(dk)
         return tf.squeeze(tf.map_fn(
             self.single_batch_reconv, 
             (tf.expand_dims(dk,1),tf.expand_dims(irf,-1)), 
@@ -159,17 +167,19 @@ def conditional_generator(inputs, weight_decay=2.5e-5):
     u_stage8 = _batch_norm(u_stage8)
     u_stage8 = tf.nn.relu(u_stage8)
 
-    u_stage9 = tf.concat([tf.keras.layers.Cropping1D(51)(_deconv1d(u_stage8,64,3,3,weight_decay)), u_stage1],-1)
-    u_stage9 = _conv1d(u_stage9,64,3,1,weight_decay)
+    u_stage9 = tf.concat([_deconv1d(u_stage8,64,2,2,weight_decay), tf.keras.layers.Cropping1D(8)(u_stage1)],-1)
+    u_stage9 = _conv1d(u_stage9,64,5,1,weight_decay)
     u_stage9 = _batch_norm(u_stage9)
     u_stage9 = tf.nn.relu(u_stage9)
-    u_stage9 = _conv1d(u_stage9,64,3,1,weight_decay)
+    u_stage9 = _conv1d(u_stage9,64,5,1,weight_decay)
     u_stage9 = _batch_norm(u_stage9)
     u_stage9 = tf.nn.relu(u_stage9)
-    u_stage9 = _deconv1d(u_stage9,1,9,1,weight_decay)
+    u_stage9 = _conv1d(u_stage9,1,9,1,weight_decay)
 
     dk_super = IRFReconv1D(256)(u_stage9,irf)
     dk_super = _conv1d(dk_super,1,1,1,weight_decay)
+    dk_super = _batch_norm(dk_super)
+    dk_super = tf.nn.relu(dk_super)
 
     generative_model = tf.keras.Model(inputs=(dk_lowcount,irf), outputs=dk_super)
     return generative_model
@@ -183,7 +193,7 @@ Critic maps high-count input and IRF and produces a score
 def conditional_critic(inputs, weight_decay=2.5e-5):
     dk_highcount = inputs[0]
     irf = inputs[1]
-    inputs = tf.concat([dk_highcount,irf/tf.reduce_max(irf)],0)
+    inputs = tf.concat([dk_highcount,irf/tf.reduce_max(irf)],1)
     net = _conv1d(inputs,64,15,7,weight_decay)
     net = tf.keras.layers.LeakyReLU(alpha=0.1)(net)
     net = _conv1d(net,128,4,2,weight_decay)
@@ -196,5 +206,5 @@ def conditional_critic(inputs, weight_decay=2.5e-5):
     net = tf.keras.layers.LeakyReLU(alpha=0.1)(net)
 
     net = _dense(net,1,weight_decay)
-    critic = tf.keras.Model(inputs=(dk_highcount, irf), outputs=net)
+    critic = tf.keras.Model(inputs=(dk_highcount,irf), outputs=net)
     return critic

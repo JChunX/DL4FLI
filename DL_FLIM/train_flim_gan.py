@@ -48,10 +48,10 @@ class FLIMGAN:
         if not os.path.exists(self.checkpt):
             os.makedirs(self.checkpt)
 
-        #train_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_gan'
-        #test_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_gan'
-        train_dir = extract_link(data_dir, train_link)
-        test_dir = extract_link(data_dir, test_link)
+        train_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_gan'
+        test_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_gan'
+        #train_dir = extract_link(data_dir, train_link)
+        #test_dir = extract_link(data_dir, test_link)
 
         self.ds_gan = DecayGenerator(train_dir,test_dir,nTG,self.batch_size,self.val_split,'gan')
         with self.strategy.scope():
@@ -64,7 +64,7 @@ class FLIMGAN:
             self.generator_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha)
             self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha, clipvalue=self.clipping)
 
-            checkpoint_prefix = os.path.join(self.checkpt, "ckpt")
+            self.checkpoint_prefix = os.path.join(self.checkpt, "ckpt")
             self.checkpoint = tf.train.Checkpoint(generator_optimizer=self.generator_optimizer,
                                          critic_optimizer=self.critic_optimizer,
                                          generator=self.generator,
@@ -118,6 +118,8 @@ class FLIMGAN:
         train_ds = self.ds_gan.train
         test_ds = self.ds_gan.test
 
+        self.critic.summary()
+
         for step in range(steps):
             for _ in range(self.ncritic):
                 critic_inputs = next(iter(train_ds))
@@ -134,8 +136,20 @@ class FLIMGAN:
                 print('.', end='', flush=True)
 
             # Save (checkpoint) the model every 500 steps
-            if (step + 1) % 500 == 0:
-                self.checkpoint.save(file_prefix=checkpoint_prefix)
+            if (step + 1) % 1 == 0:
+                self.checkpoint.save(file_prefix=self.checkpoint_prefix)
+                print('gen_loss: {}'.format(gen_loss))
+                print('crit_loss: {}'.format(crit_loss))
+                self.ds_gan.plot(self.generator, savedir=self.logdir)
+                dk_low, dk_high = self.ds_gan.example
+                dk_super = self.generator(dk_low,training=False)
+
+                critique_gen = self.critic([dk_super,dk_low[1]],training=False)
+                critique_real = self.critic([dk_high,dk_low[1]],training=False)
+
+                print('Generator critic score:\n{}'.format(critique_gen))
+                print('Real decay critic score:\n{}'.format(critique_real))
+
 
         return
 

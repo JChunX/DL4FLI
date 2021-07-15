@@ -30,10 +30,8 @@ class TcspcDataGenerator(ABC):
         pass
 
     def configure_for_performance(self,ds):
-        ds = ds.cache()
         ds = ds.batch(self.batch_size)
         ds = ds.prefetch(buffer_size=1)
-        ds = ds.repeat()
         return ds
 
     def get_dataset(self, ds):
@@ -112,12 +110,12 @@ class DecayGenerator(TcspcDataGenerator):
         else:
             return (decay_highcount), (t1,t2,rT)
 
-    def plot(self, model=None, max_subplots=1):
+    def plot(self, model=None, max_subplots=1, savedir=None):
         dk, labels = self.example
         for i in range(min(max_subplots,self.batch_size)):
 
             if self.type == 'gan':
-                plt.figure(figsize=(30,10))
+                plt.figure(figsize=(20,7))
                 plt.subplot(1,3,1)
                 plt.title('Low count decay example')
                 plt.plot(dk[0][i])
@@ -140,8 +138,10 @@ class DecayGenerator(TcspcDataGenerator):
                     print('tau1_pred: {}'.format(predictions[0][i,0,0].numpy())) #TODO
                     print('tau2_pred: {}'.format(predictions[1][i,0,0].numpy())) #TODO
                     print('alpha%_pred: {}'.format(predictions[2][i,0,0].numpy())) #TODO
-            plt.show()
-
+            if savedir is None:
+                plt.show()
+            else:
+                plt.savefig(os.path.join(savedir,'data_plot.png'))
 
 class VoxelGenerator(TcspcDataGenerator):
 
@@ -170,6 +170,12 @@ class VoxelGenerator(TcspcDataGenerator):
         irf = np.array(f['irf'],dtype=np.float32)
         
         return (decay, t1, t2, rT, irf)
+
+    def configure_for_performance(self,ds):
+        ds = ds.cache()
+        ds = ds.batch(self.batch_size)
+        ds = ds.prefetch(buffer_size=1)
+        return ds
 
     def wrap_process_path(self, path):
         tensors = tf.numpy_function(self.process_path, [path], [tf.float32, 
