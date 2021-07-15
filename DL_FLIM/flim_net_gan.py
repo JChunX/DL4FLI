@@ -11,13 +11,23 @@ def _batch_norm(inputs):
     return tf.keras.layers.BatchNormalization(
         momentum=0.999, epsilon=0.001)(inputs)
 
+"""
+
+1D deconvolution layer
+Implemented as 2D deconvolution
+
+"""
 def _deconv1d(inputs, filters, kernel_size, stride, l2_weight):
-    return tf.keras.layers.Conv1DTranspose(
-        filters, kernel_size, strides=stride, 
+    #(batch,width,channels) -> (batch,width,1,channels)
+    inputs = tf.expand_dims(inputs,2)
+    temp =  tf.keras.layers.Conv2DTranspose(
+        filters, [kernel_size,1], strides=[stride,1], 
         activation=tf.nn.relu, padding='valid',
         kernel_initializer=tf.keras.initializers.glorot_uniform,
         kernel_regularizer=tf.keras.regularizers.l2(l=l2_weight),
         bias_regularizer=tf.keras.regularizers.l2(l=l2_weight))(inputs)
+    # (batch, new_width, 1, new_channels) -> (batch, new_width, new_channels)
+    return tf.squeeze(temp,axis=2)
 
 def _conv1d(inputs, filters, kernel_size, stride, l2_weight):
     return tf.keras.layers.Conv1D(
@@ -175,15 +185,15 @@ def conditional_critic(inputs, weight_decay=2.5e-5):
     irf = inputs[1]
     inputs = tf.concat([dk_highcount,irf/tf.reduce_max(irf)],0)
     net = _conv1d(inputs,64,15,7,weight_decay)
-    net = _leaky_relu(net)
+    net = tf.keras.layers.LeakyReLU(alpha=0.1)(net)
     net = _conv1d(net,128,4,2,weight_decay)
-    net = _leaky_relu(net)
+    net = tf.keras.layers.LeakyReLU(alpha=0.1)(net)
     net = _conv1d(net,128,4,2,weight_decay)
-    net = _leaky_relu(net)
+    net = tf.keras.layers.LeakyReLU(alpha=0.1)(net)
 
     net = tf.keras.layers.Flatten()(net)
     net = _dense(net,128,weight_decay)
-    net = _leaky_relu(net)
+    net = tf.keras.layers.LeakyReLU(alpha=0.1)(net)
 
     net = _dense(net,1,weight_decay)
     critic = tf.keras.Model(inputs=(dk_highcount, irf), outputs=net)

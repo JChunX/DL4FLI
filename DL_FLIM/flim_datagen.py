@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import h5py
 import os
+import matplotlib
 import matplotlib.pyplot as plt 
 
 from abc import ABC, abstractmethod
@@ -140,7 +141,6 @@ class DecayGenerator(TcspcDataGenerator):
                     print('tau2_pred: {}'.format(predictions[1][i,0,0].numpy())) #TODO
                     print('alpha%_pred: {}'.format(predictions[2][i,0,0].numpy())) #TODO
             plt.show()
-            plt.pause(0.001)
 
 
 class VoxelGenerator(TcspcDataGenerator):

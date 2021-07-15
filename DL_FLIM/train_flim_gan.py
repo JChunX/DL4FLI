@@ -12,7 +12,6 @@ from flim_datagen import DecayGenerator
 from data_extraction import extract_link
 from flim_net_gan import conditional_generator, conditional_critic
 
-mirrored_strategy = tf.distribute.MirroredStrategy()
 
 #python train_flim_gan.py --steps 30000 --batch_size 2 D:\Data\DL-FLIM https://www.dropbox.com/s/0lpsp1r9ma3nvmr/train_gan.zip https://www.dropbox.com/s/hb9xhjl2flt5hrw/test_gan.zip?dl=0
 
@@ -23,19 +22,22 @@ class FLIMGAN:
                     test_link,
                     nTG,
                     val_split,
-                    generator,
-                    critic,
                     hparams):
+        self.strategy = tf.distribute.MirroredStrategy()
+
         self.data_dir = data_dir
         self.train_link = train_link
         self.test_link = test_link
+
         self.nTG = nTG
-        self.batch_size = hparams['batch_size'] * mirrored_strategy.num_replicas_in_sync
+        self.batch_size = hparams['batch_size'] * self.strategy.num_replicas_in_sync
+
         self.alpha = hparams['alpha']
         self.clipping = hparams['clipping']
         self.ncritic = hparams['ncritic']
         self.batch_size = hparams['batch_size']
         self.val_split = val_split
+
         self.logdir = os.path.join(data_dir,'logs')
         self.checkpt = os.path.join(data_dir,'checkpt')
 
@@ -46,44 +48,70 @@ class FLIMGAN:
         if not os.path.exists(self.checkpt):
             os.makedirs(self.checkpt)
 
-        train_dir = extract_link(data_dir, train_link)#'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_gan'
-        test_dir = extract_link(data_dir, test_link)#'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_gan'
+        #train_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_gan'
+        #test_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_gan'
+        train_dir = extract_link(data_dir, train_link)
+        test_dir = extract_link(data_dir, test_link)
 
         self.ds_gan = DecayGenerator(train_dir,test_dir,nTG,self.batch_size,self.val_split,'gan')
-        # generator: (dk_lowcount, irf) -> dk_high
-        self.generator = generator 
-        # critic: (dk_high, irf) -> score
-        self.critic = critic
-        self.generator_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha)
-        self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha, clipvalue=self.clipping)
+        with self.strategy.scope():
+            # generator: (dk_lowcount, irf) -> dk_high
+            self.generator = conditional_generator((tf.keras.Input(shape=(nTG,1)),
+                                            tf.keras.Input(shape=(nTG,1)))) 
+            # critic: (dk_high, irf) -> score
+            self.critic = conditional_critic((tf.keras.Input(shape=(nTG,1)),
+                                    tf.keras.Input(shape=(nTG,1))))
+            self.generator_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha)
+            self.critic_optimizer = tf.keras.optimizers.RMSprop(learning_rate=self.alpha, clipvalue=self.clipping)
 
+            checkpoint_prefix = os.path.join(self.checkpt, "ckpt")
+            self.checkpoint = tf.train.Checkpoint(generator_optimizer=self.generator_optimizer,
+                                         critriminator_optimizer=self.critic_optimizer,
+                                         generator=self.generator,
+                                         critriminator=self.critic)
+
+    @tf.function
     def generator_loss(self, crit_generated_output):
         # Mean absolute error (sum) from critic output
         return -tf.reduce_mean(tf.abs(crit_generated_output))
 
+    @tf.function
     def critic_loss(self, crit_generated_output, crit_real_output):
         return -tf.reduce_mean(tf.abs(crit_real_output)) + tf.reduce_mean(tf.abs(crit_generated_output))
 
-    @tf.function
-    def train_inner_step(self,dk_low, dk_high):
-        for _ in range(self.ncritic):
-            # Sample prior, real data, compute loss on critic
-            with tf.GradientTape() as crit_tape:
-                gen_output = self.generator(dk_low, training=True)
-                crit_real_output = self.critic([dk_high, dk_low[1]], training=True)
-                crit_generated_output = self.critic([gen_output, dk_low[1]], training=True)
-                crit_loss = self.critic_loss(crit_generated_output, crit_real_output)
-            critic_gradients = crit_tape.gradient(crit_loss, self.critic.trainable_variables)
-            self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic.trainable_variables))
+    def train_critic_step(self, critic_inputs):
+        dk_low, dk_high = critic_inputs
+        # Sample prior, real data, compute loss on critic
+        with tf.GradientTape() as crit_tape:
+            gen_output = self.generator(dk_low, training=True)
+            crit_real_output = self.critic([dk_high, dk_low[1]], training=True)
+            crit_generated_output = self.critic([gen_output, dk_low[1]], training=True)
+            crit_loss = self.critic_loss(crit_generated_output, crit_real_output)
+        critic_gradients = crit_tape.gradient(crit_loss, self.critic.trainable_variables)
+        self.critic_optimizer.apply_gradients(zip(critic_gradients, self.critic.trainable_variables))
         return crit_loss
 
+    def train_generator_step(self,dk_low):
+        with tf.GradientTape() as gen_tape:
+            gen_output = self.generator(dk_low, training=True)
+            crit_generated_output = self.critic([gen_output, dk_low[1]],training=True)
+            gen_loss = self.generator_loss(crit_generated_output)
+        generator_gradients = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
+        self.generator_optimizer.apply_gradients(zip(generator_gradients, self.generator.trainable_variables))
+        return gen_loss
+
     @tf.function
+    def distributed_train_critic_step(self, critic_inputs):
+        per_replica_losses = self.strategy.run(self.train_critic_step, args=(critic_inputs,))
+        return self.strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+
+    @tf.function
+    def distributed_train_generator_step(self, generator_inputs):
+        per_replica_losses = self.strategy.run(self.train_generator_step, args=(generator_inputs,))
+        return self.strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+
     def train_wasserstein(self, steps):
-        checkpoint_prefix = os.path.join(self.checkpt, "ckpt")
-        checkpoint = tf.train.Checkpoint(generator_optimizer=self.generator_optimizer,
-                                     critriminator_optimizer=self.critic_optimizer,
-                                     generator=self.generator,
-                                     critriminator=self.critic)
+
         summary_writer = tf.summary.create_file_writer(
             os.path.join(self.checkpt, "fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")))
 
@@ -92,15 +120,10 @@ class FLIMGAN:
 
         for step in range(steps):
             for _ in range(self.ncritic):
-                (dk_low, dk_high) = next(iter(train_ds))
-                crit_loss = self.train_inner_step(dk_low, dk_high)
-            (dk_low, dk_high) = next(iter(train_ds))
-            with tf.GradientTape() as gen_tape:
-                gen_output = self.generator(dk_low, training=True)
-                crit_generated_output = self.critic([gen_output, dk_low[1]],training=True)
-                gen_loss = self.generator_loss(crit_generated_output)
-            generator_gradients = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
-            self.generator_optimizer.apply_gradients(zip(generator_gradients, self.generator.trainable_variables))
+                critic_inputs = next(iter(train_ds))
+                crit_loss = self.distributed_train_critic_step(critic_inputs)
+            generator_inputs, _ = next(iter(train_ds))
+            gen_loss = self.distributed_train_generator_step(generator_inputs)
 
             with summary_writer.as_default():
                 tf.summary.scalar('gen_loss', gen_loss, step=step//1000)
@@ -110,9 +133,9 @@ class FLIMGAN:
             if (step+1) % 10 == 0:
                 print('.', end='', flush=True)
 
-            # Save (checkpoint) the model every 5k steps
-            if (step + 1) % 5000 == 0:
-                checkpoint.save(file_prefix=checkpoint_prefix)
+            # Save (checkpoint) the model every 500 steps
+            if (step + 1) % 500 == 0:
+                self.checkpoint.save(file_prefix=checkpoint_prefix)
 
         return
 
@@ -123,14 +146,9 @@ def main(args):
            'clipping':0.01,
            'ncritic':5,
            'batch_size':args.batch_size}
-    with mirrored_strategy.scope():
-        generator = conditional_generator((tf.keras.Input(shape=(nTG,1)),
-                                        tf.keras.Input(shape=(nTG,1))))
-        critic = conditional_critic((tf.keras.Input(shape=(nTG,1)),
-                                tf.keras.Input(shape=(nTG,1))))
-        gan = FLIMGAN(args.data_dir, args.train_link, args.test_link, nTG, 0.2, generator, critic, hparams)
+
+    gan = FLIMGAN(args.data_dir, args.train_link, args.test_link, nTG, 0.2, hparams)
     steps = args.steps
-    gan.ds_gan.plot(gan.generator)
     gan.train_wasserstein(steps)
 
 
