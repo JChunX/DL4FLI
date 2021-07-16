@@ -48,10 +48,10 @@ class FLIMGAN:
         if not os.path.exists(self.checkpt):
             os.makedirs(self.checkpt)
 
-        train_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_gan'
-        test_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_gan'
-        #train_dir = extract_link(data_dir, train_link)
-        #test_dir = extract_link(data_dir, test_link)
+        #train_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\train_gan'
+        #test_dir = 'C:\\Users\\xieji\\Dropbox\\Documents\\Data\\DL-FLIM\\test_gan'
+        train_dir = extract_link(data_dir, train_link)
+        test_dir = extract_link(data_dir, test_link)
 
         self.ds_gan = DecayGenerator(train_dir,test_dir,nTG,self.batch_size,self.val_split,'gan')
         with self.strategy.scope():
@@ -136,7 +136,7 @@ class FLIMGAN:
                 print('.', end='', flush=True)
 
             # Save (checkpoint) the model every 500 steps
-            if (step + 1) % 1 == 0:
+            if (step + 1) % 100 == 0:
                 self.checkpoint.save(file_prefix=self.checkpoint_prefix)
                 print('gen_loss: {}'.format(gen_loss))
                 print('crit_loss: {}'.format(crit_loss))

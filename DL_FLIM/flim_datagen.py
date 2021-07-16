@@ -141,7 +141,7 @@ class DecayGenerator(TcspcDataGenerator):
             if savedir is None:
                 plt.show()
             else:
-                plt.savefig(os.path.join(savedir,'data_plot.png'))
+                plt.savefig(os.path.join(savedir,'data_plot.png'), format='png')
 
 class VoxelGenerator(TcspcDataGenerator):
 
